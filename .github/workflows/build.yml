@@ -110,7 +110,7 @@ jobs:
           cd openwrt
           missing=0
           echo "===== 必需包 ====="
-          for p in luci-app-openclash mihomo-core luci-app-mosdns mosdns geo2txt \
+          for p in luci-app-openclash mihomo-core luci-app-mosdns mosdns v2dat \
                    luci-app-wechatpush luci-app-lucky lucky luci-app-frpc frpc \
                    luci-app-vlmcsd vlmcsd luci-app-easytier easytier \
                    luci-app-bandix bandix; do
