@@ -1,0 +1,160 @@
+name: Build-ImmortalWrt-ZNM2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-24.10
+  CONFIG_FILE: configs/znm2.config
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 4096
+          swap-size-mb: 4096
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -y update
+          sudo -E apt-get -y install --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev zlib1g-dev ca-certificates \
+            python3 python3-dev python3-pip python3-setuptools rsync swig unzip zip \
+            file wget curl bc kmod device-tree-compiler ccache cmake cpio gperf \
+            help2man intltool libelf-dev libglib2.0-dev libgmp-dev libmpc-dev \
+            libmpfr-dev libtool libreadline-dev p7zip-full patch pkgconf scons \
+            squashfs-tools subversion texinfo uglifyjs upx-ucl xxd qemu-utils \
+            ninja-build xorriso
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo timedatectl set-timezone "$TZ"
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ env.REPO_BRANCH }}-${{ github.run_number }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-${{ env.REPO_BRANCH }}-
+
+      - name: Clone ImmortalWrt source
+        run: |
+          git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" openwrt
+          cd openwrt
+          git log -1 --pretty=format:'%h %ad %s' --date=short
+          echo "SOURCE_COMMIT=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      - name: Patch zn_m2 device support
+        run: bash scripts/znm2-patch.sh "$PWD/openwrt"
+
+      - name: Update and install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a 2>&1 | tail -n 20
+          ./scripts/feeds install -a 2>&1 | tail -n 40
+
+      - name: Add third-party plugins
+        run: bash scripts/third-party.sh "$PWD/openwrt"
+
+      - name: Load config and resolve dependencies
+        run: |
+          cd openwrt
+          cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
+          make defconfig 2>&1 | tee defconfig.log | tail -n 60
+          echo "===== 依赖告警 ====="
+          grep -iE "warning|error" defconfig.log | head -n 60 || true
+
+      - name: Verify requested packages are enabled
+        run: |
+          cd openwrt
+          missing=0
+          for p in luci-app-openclash mihomo-core luci-app-mosdns mosdns geo2txt \
+                   luci-app-wechatpush luci-app-lucky lucky luci-app-frpc frpc \
+                   luci-app-vlmcsd vlmcsd luci-app-easytier easytier \
+                   luci-app-bandix bandix; do
+            if ! grep -qx "CONFIG_PACKAGE_$p=y" .config; then
+              echo "::error::软件包 $p 未被启用（依赖不满足或包名不存在）"
+              missing=1
+            fi
+          done
+          grep -qx "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y" .config || { echo "::error::zn_m2 设备未选中"; missing=1; }
+          echo "----- 固件内已选中的 ath11k/wpad（应为空）-----"
+          grep -E "^CONFIG_PACKAGE_(kmod-ath11k|wpad|ath11k)" .config || echo "(none)"
+          exit $missing
+
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j8 2>&1 | tail -n 30
+          find dl -size -1024c -type f -delete || true
+
+      - name: Build firmware
+        run: |
+          cd openwrt
+          make -j"$(nproc)" V=s 2>&1 | tee build.log | tail -n 120
+          echo "::group::image list"
+          ls -lh bin/targets/qualcommax/ipq60xx/ || true
+          echo "::endgroup::"
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            openwrt/build.log
+            openwrt/defconfig.log
+          retention-days: 5
+
+      - name: Collect firmware
+        run: |
+          mkdir -p output
+          cd openwrt/bin/targets/qualcommax/ipq60xx
+          cp -v ./*.ubi ./*.bin ./*.manifest ./sha256sums ../../../..
+          cd "$GITHUB_WORKSPACE"
+          ls -lh output/
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-znm2-${{ github.run_number }}
+          path: output/*
+          retention-days: 30
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: ZN-M2 ImmortalWrt (24.10) build ${{ github.run_number }}
+          body: |
+            - 源码: immortalwrt/immortalwrt `openwrt-24.10` @ ${{ env.SOURCE_COMMIT }}
+            - 设备: 兆能 ZN-M2 (IPQ6000 / IPQ6018, 512MB RAM, 无 WiFi)
+            - 包管理: opkg（可用 .ipk）
+            - 内置: OpenClash(+mihomo 内核), mosdns, 微信推送, Lucky, frpc, vlmcsd(KMS), EasyTier, Bandix
+            - 刷机: 不死 U-Boot 用 `*-factory.ubi`；已有 OpenWrt 用 `*-sysupgrade.bin`
+          files: output/*
+          draft: false
