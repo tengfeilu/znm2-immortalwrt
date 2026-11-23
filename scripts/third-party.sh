@@ -11,13 +11,18 @@ fetch() { # fetch <url> <ref> <dir>
 	git clone --depth 1 -b "$2" "$1" "$TMP/$3"
 }
 
-echo ">>> mosdns (sbwml v5: 核心带 stats_api 补丁 + LuCI)"
-fetch https://github.com/sbwml/luci-app-mosdns.git v5 mosdns
-rm -f "$SRC/package/feeds/packages/mosdns"          # 避免与 feed 里的 mosdns 重名
-rm -rf "$SRC/package/feeds/packages/mosdns"
-cp -r "$TMP/mosdns/luci-app-mosdns" "$SRC/package/"
-cp -r "$TMP/mosdns/mosdns" "$SRC/package/"
-cp -r "$TMP/mosdns/geo2txt" "$SRC/package/"
+# mosdns 固定到 5.3.3-r4 期提交：其依赖补丁把 go.mod 定为 go 1.23.0，
+# 与 immortalwrt 24.10 自带的 golang 1.23.12 一致（v5 最新分支已要求 go 1.26，无法编译）。
+MOSD_SHA=849af3f740108341745679c9bdc5dd97e5dba5ac
+echo ">>> mosdns (sbwml 5.3.3-r4 @ ${MOSD_SHA:0:10} + LuCI 1.6.10 + v2dat)"
+curl -fsSL --retry 3 -o "$TMP/mos.tar.gz" \
+	"https://codeload.github.com/sbwml/luci-app-mosdns/tar.gz/${MOSD_SHA}"
+mkdir -p "$TMP/mos"
+tar -xzf "$TMP/mos.tar.gz" -C "$TMP/mos" --strip-components=1
+rm -rf "$SRC/package/feeds/packages/mosdns"       # 避免与 feed 里的 mosdns 重名
+cp -r "$TMP/mos/luci-app-mosdns" "$SRC/package/"
+cp -r "$TMP/mos/mosdns" "$SRC/package/"
+cp -r "$TMP/mos/v2dat" "$SRC/package/"
 
 echo ">>> lucky"
 fetch https://github.com/gdy666/luci-app-lucky.git main lucky
