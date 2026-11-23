@@ -1,34 +1,38 @@
 #!/bin/bash
-# 为 ImmortalWrt (openwrt-24.10) 添加兆能 ZN-M2 (IPQ6000/IPQ6018) 设备支持
-# 说明：上游 OpenWrt/ImmortalWrt 均未内置 zn_m2，此处通过补充 DTS + image profile 实现。
+# 为 ImmortalWrt (openwrt-24.10, qualcommax/ipq60xx) 添加兆能 ZN-M2 (IPQ6000/IPQ6018) 设备支持
+# DTS 参考：LiBwrt ipq6000-cmiot.dtsi + ipq6000-m2.dts（同硬件、已被大量实机使用）
 set -euo pipefail
 
 SRC="${1:?usage: znm2-patch.sh <openwrt-source-dir>}"
 DTS_DIR="$SRC/target/linux/qualcommax/files/arch/arm64/boot/dts/qcom"
+TMK="$SRC/target/linux/qualcommax/ipq60xx/target.mk"
+BMK="$SRC/target/linux/qualcommax/Makefile"
 
 echo ">>> 写入 DTS: ipq6018-m2.dts"
 cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
-// SPDX-License-Identifier: (GPL-2.0+)
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 
 /dts-v1/;
 
 #include "ipq6018-512m.dtsi"
 #include "ipq6018-cp-cpu.dtsi"
 #include "ipq6018-ess.dtsi"
+
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
 
 / {
 	model = "ZN M2";
 	compatible = "zn,m2", "qcom,ipq6018";
 
 	aliases {
+		serial0 = &blsp1_uart3;
+
 		ethernet0 = &dp1;
 		ethernet1 = &dp2;
-		ethernet2 = &dp4;
-		ethernet3 = &dp5;
-		serial0 = &blsp1_uart3;
+		ethernet3 = &dp4;
+		ethernet4 = &dp5;
+
 		led-boot = &led_power;
 		led-failsafe = &led_power;
 		led-running = &led_power;
@@ -36,6 +40,7 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 	};
 
 	chosen {
+		stdout-path = "serial0:115200n8";
 		bootargs-append = " root=/dev/ubiblock0_1 swiotlb=1";
 	};
 
@@ -57,37 +62,25 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 
 	leds {
 		compatible = "gpio-leds";
-		pinctrl-0 = <&leds_pins>;
-		pinctrl-names = "default";
 
 		led_power: power {
-			label = "m2:blue:power";
+			label = "blue:power";
 			gpios = <&tlmm 58 GPIO_ACTIVE_HIGH>;
 		};
 
 		mesh {
-			label = "m2:blue:mesh";
+			label = "blue:mesh";
 			gpios = <&tlmm 73 GPIO_ACTIVE_HIGH>;
 		};
 
 		lan {
-			label = "m2:blue:lan";
+			label = "blue:lan";
 			gpios = <&tlmm 74 GPIO_ACTIVE_HIGH>;
 		};
 
 		wan {
-			label = "m2:blue:wan";
+			label = "blue:wan";
 			gpios = <&tlmm 37 GPIO_ACTIVE_HIGH>;
-		};
-
-		wlan5g {
-			label = "m2:blue:wlan5g";
-			gpios = <&tlmm 35 GPIO_ACTIVE_HIGH>;
-		};
-
-		wlan2g {
-			label = "m2:blue:wlan2g";
-			gpios = <&tlmm 70 GPIO_ACTIVE_HIGH>;
 		};
 	};
 };
@@ -114,34 +107,20 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 			bias-pull-up;
 		};
 	};
-
-	leds_pins: leds_pins {
-		mux {
-			pins = "gpio35", "gpio37",
-				"gpio58", "gpio70",
-				"gpio73", "gpio74";
-			function = "gpio";
-			drive-strength = <8>;
-			bias-pull-down;
-		};
-	};
 };
 
 &mdio {
 	status = "okay";
+
 	pinctrl-0 = <&mdio_pins>;
 	pinctrl-names = "default";
 	reset-gpios = <&tlmm 75 GPIO_ACTIVE_LOW>;
-	reset-delay-us = <10000>;
-	reset-post-delay-us = <50000>;
 
 	ethernet-phy-package@0 {
+		compatible = "qcom,qca8075-package";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		compatible = "qcom,qca8075-package";
 		reg = <0>;
-
-		qcom,package-mode = "psgmii";
 
 		qca8075_0: ethernet-phy@0 {
 			compatible = "ethernet-phy-ieee802.3-c22";
@@ -151,11 +130,6 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 		qca8075_1: ethernet-phy@1 {
 			compatible = "ethernet-phy-ieee802.3-c22";
 			reg = <1>;
-		};
-
-		qca8075_2: ethernet-phy@2 {
-			compatible = "ethernet-phy-ieee802.3-c22";
-			reg = <2>;
 		};
 
 		qca8075_3: ethernet-phy@3 {
@@ -173,9 +147,9 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 &switch {
 	status = "okay";
 
-	switch_lan_bmp = <(ESS_PORT1 | ESS_PORT2 | ESS_PORT4)>; /* lan port bitmap */
-	switch_wan_bmp = <ESS_PORT5>; /* wan port bitmap */
-	switch_mac_mode = <MAC_MODE_PSGMII>; /* mac mode for uniphy instance0 */
+	switch_lan_bmp = <(ESS_PORT1 | ESS_PORT2 | ESS_PORT4)>;
+	switch_wan_bmp = <ESS_PORT5>;
+	switch_mac_mode = <MAC_MODE_PSGMII>;
 
 	qcom,port_phyinfo {
 		port@1 {
@@ -200,10 +174,28 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 	};
 };
 
+&qpic_nand {
+	status = "okay";
+
+	nand@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		reg = <0>;
+
+		nand-ecc-strength = <4>;
+		nand-ecc-step-size = <512>;
+		nand-bus-width = <8>;
+
+		partitions {
+			compatible = "qcom,smem-part";
+		};
+	};
+};
+
 &dp1 {
 	status = "okay";
 	phy-handle = <&qca8075_0>;
-	label = "lan1";
+	label = "lan3";
 };
 
 &dp2 {
@@ -215,41 +207,16 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 &dp4 {
 	status = "okay";
 	phy-handle = <&qca8075_3>;
-	label = "lan3";
+	label = "lan1";
 };
 
 &dp5 {
 	status = "okay";
 	phy-handle = <&qca8075_4>;
-	phy-mode = "psgmii";
 	label = "wan";
 };
 
-&qpic_bam {
-	status = "okay";
-};
-
-&qpic_nand {
-	status = "okay";
-
-	nand@0 {
-		reg = <0>;
-
-		nand-ecc-strength = <4>;
-		nand-ecc-step-size = <512>;
-		nand-bus-width = <8>;
-	};
-};
-
-&prng {
-	status = "okay";
-};
-
-&cryptobam {
-	status = "okay";
-};
-
-&crypto {
+&edma {
 	status = "okay";
 };
 
@@ -270,10 +237,6 @@ cat > "$DTS_DIR/ipq6018-m2.dts" <<'DTS'
 };
 
 &usb2 {
-	status = "okay";
-};
-
-&edma {
 	status = "okay";
 };
 
@@ -306,14 +269,19 @@ define Device/zn_m2
 	PAGESIZE := 2048
 	DEVICE_DTS_CONFIG := config@cp03-c1
 	SOC := ipq6018
+	SUPPORTED_DEVICES += zn,m2
 endef
 TARGET_DEVICES += zn_m2
 MK
 
-echo ">>> 移除默认 WiFi 固件包（无 WiFi 版本）"
-sed -i 's/^\tath11k-firmware-ipq6018$//' "$SRC/target/linux/qualcommax/ipq60xx/target.mk"
-sed -i 's/^DEFAULT_PACKAGES += ath11k-firmware-ipq6018$//' "$SRC/target/linux/qualcommax/ipq60xx/target.mk"
-sed -i 's/kmod-ath11k-ahb wpad-openssl/\\/' "$SRC/target/linux/qualcommax/Makefile"
-sed -n '11,20p' "$SRC/target/linux/qualcommax/Makefile"
-grep -n "DEFAULT_PACKAGES" -A6 "$SRC/target/linux/qualcommax/ipq60xx/target.mk" || true
+echo ">>> 无 WiFi 版本：移除 ath11k/wpad 默认包与 source-only 标记"
+grep -v 'source-only' "$TMK" | grep -v 'ath11k' > "$TMK.tmp" || true
+mv "$TMK.tmp" "$TMK"
+grep -v 'kmod-ath11k-ahb' "$BMK" | grep -v 'wpad-openssl' > "$BMK.tmp" || true
+mv "$BMK.tmp" "$BMK"
+
+echo "--- qualcommax/Makefile ---"
+sed -n '1,25p' "$BMK"
+echo "--- ipq60xx/target.mk ---"
+cat "$TMK"
 echo ">>> 完成"
