@@ -90,7 +90,18 @@ jobs:
           set -o pipefail
           cd openwrt
           cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
-          make defconfig 2>&1 | tee defconfig.log | tail -n 60
+          if ! make defconfig 2>&1 | tee defconfig.log | tail -n 60; then
+            echo "===== defconfig 失败，诊断信息 ====="
+            grep -nE "syntax error|invalid statement" defconfig.log | head -n 3 || true
+            LN=$(grep -m1 -oE "tmp/\.config-target\.in:[0-9]+" defconfig.log | head -n1 | cut -d: -f2 || true)
+            if [ -n "${LN:-}" ]; then
+              echo "----- .config-target.in 第 $LN 行附近 -----"
+              sed -n "$((LN-6)),$((LN+6))p" tmp/.config-target.in || true
+            fi
+            echo "----- .config-target.in 中含反斜杠的行（前 20）-----"
+            grep -n '\\\\' tmp/.config-target.in | head -n 20 || true
+            exit 1
+          fi
           echo "===== 依赖告警 ====="
           grep -iE "warning|error" defconfig.log | head -n 60 || true
 
@@ -98,14 +109,21 @@ jobs:
         run: |
           cd openwrt
           missing=0
+          echo "===== 必需包 ====="
           for p in luci-app-openclash mihomo-core luci-app-mosdns mosdns geo2txt \
                    luci-app-wechatpush luci-app-lucky lucky luci-app-frpc frpc \
                    luci-app-vlmcsd vlmcsd luci-app-easytier easytier \
                    luci-app-bandix bandix; do
-            if ! grep -qx "CONFIG_PACKAGE_$p=y" .config; then
+            if grep -qx "CONFIG_PACKAGE_$p=y" .config; then
+              echo "  [OK]  $p"
+            else
               echo "::error::软件包 $p 未被启用（依赖不满足或包名不存在）"
               missing=1
             fi
+          done
+          echo "===== 语言包（缺失只告警，不中断）====="
+          for p in $(grep -oE "^CONFIG_PACKAGE_luci-i18n-[a-z0-9-]+=y" "$GITHUB_WORKSPACE/$CONFIG_FILE" | sed 's/CONFIG_PACKAGE_//;s/=y//'); do
+            grep -qx "CONFIG_PACKAGE_$p=y" .config || echo "  ::warning::$p 不可用，已跳过"
           done
           grep -qx "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y" .config || { echo "::error::zn_m2 设备未选中"; missing=1; }
           echo "----- 固件内已选中的 ath11k/wpad（应为空）-----"
@@ -158,6 +176,7 @@ jobs:
           retention-days: 30
 
       - name: Publish release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
