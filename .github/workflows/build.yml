@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: openwrt-24.10
@@ -73,6 +77,7 @@ jobs:
 
       - name: Update and install feeds
         run: |
+          set -o pipefail
           cd openwrt
           ./scripts/feeds update -a 2>&1 | tail -n 20
           ./scripts/feeds install -a 2>&1 | tail -n 40
@@ -82,6 +87,7 @@ jobs:
 
       - name: Load config and resolve dependencies
         run: |
+          set -o pipefail
           cd openwrt
           cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
           make defconfig 2>&1 | tee defconfig.log | tail -n 60
@@ -108,34 +114,40 @@ jobs:
 
       - name: Download sources
         run: |
+          set -o pipefail
           cd openwrt
           make download -j8 2>&1 | tail -n 30
           find dl -size -1024c -type f -delete || true
 
       - name: Build firmware
         run: |
+          set -o pipefail
           cd openwrt
-          make -j"$(nproc)" V=s 2>&1 | tee build.log | tail -n 120
+          make -j"$(nproc)" V=s 2>&1 | tee build.log | tail -n 150
           echo "::group::image list"
           ls -lh bin/targets/qualcommax/ipq60xx/ || true
           echo "::endgroup::"
 
-      - name: Upload build log on failure
-        if: failure()
+      - name: Upload build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: build-log-${{ github.run_number }}
           path: |
             openwrt/build.log
             openwrt/defconfig.log
           retention-days: 5
+          if-no-files-found: warn
 
       - name: Collect firmware
         run: |
           mkdir -p output
-          cd openwrt/bin/targets/qualcommax/ipq60xx
-          cp -v ./*.ubi ./*.bin ./*.manifest ./sha256sums ../../../..
-          cd "$GITHUB_WORKSPACE"
+          SRC_DIR="openwrt/bin/targets/qualcommax/ipq60xx"
+          ls -lh "$SRC_DIR" || true
+          cp -v "$SRC_DIR"/*zn_m2*.ubi output/ || true
+          cp -v "$SRC_DIR"/*zn_m2*.bin output/ || true
+          cp -v "$SRC_DIR"/*zn_m2*.manifest output/ || true
+          cp -v "$SRC_DIR"/sha256sums output/ || true
           ls -lh output/
 
       - name: Upload firmware artifact
