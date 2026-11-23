@@ -29,7 +29,7 @@ fetch https://github.com/EasyTier/luci-app-easytier.git main easytier
 cp -r "$TMP/easytier/luci-app-easytier" "$SRC/package/"
 cp -r "$TMP/easytier/easytier" "$SRC/package/"
 
-echo ">>> Bandix (LuCI + eBPF 后端, 后端走官方预编译)")
+echo ">>> Bandix (LuCI + eBPF 后端, 后端用官方预编译二进制)"
 fetch https://github.com/timsaya/luci-app-bandix.git main bandix-luci
 cp -r "$TMP/bandix-luci/luci-app-bandix" "$SRC/package/"
 fetch https://github.com/timsaya/openwrt-bandix.git main bandix-core
