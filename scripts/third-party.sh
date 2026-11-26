@@ -47,7 +47,7 @@ cp -a "$TMP/wechatpush/." "$SRC/package/luci-app-wechatpush/"
 rm -rf "$SRC/package/luci-app-wechatpush/.git" "$SRC/package/luci-app-wechatpush/.github"
 
 echo ">>> 超级网络唤醒 (luci-app-wolultra)"
-fetch https://github.com/VIKINGYFY/packages.git master viking
+fetch https://github.com/VIKINGYFY/packages.git main viking
 cp -r "$TMP/viking/luci-app-wolultra" "$SRC/package/"
 
 echo ">>> 本地包: mihomo 内核"
