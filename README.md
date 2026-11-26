@@ -18,6 +18,7 @@
 | KMS 服务器 | `vlmcsd` + `luci-app-vlmcsd` |
 | EasyTier | `easytier` + `luci-app-easytier` |
 | Bandix 流量监控 | `bandix` + `luci-app-bandix` |
+| 超级网络唤醒 | `luci-app-wolultra` + `etherwake` |
 
 ## 刷机
 
