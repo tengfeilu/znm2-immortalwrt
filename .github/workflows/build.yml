@@ -113,7 +113,7 @@ jobs:
           for p in luci-app-openclash mihomo-core luci-app-mosdns mosdns v2dat \
                    luci-app-wechatpush luci-app-lucky lucky luci-app-frpc frpc \
                    luci-app-vlmcsd vlmcsd luci-app-easytier easytier \
-                   luci-app-bandix bandix; do
+                   luci-app-bandix bandix luci-app-wolultra etherwake; do
             if grep -qx "CONFIG_PACKAGE_$p=y" .config; then
               echo "  [OK]  $p"
             else
@@ -185,7 +185,7 @@ jobs:
             - 源码: immortalwrt/immortalwrt `openwrt-24.10` @ ${{ env.SOURCE_COMMIT }}
             - 设备: 兆能 ZN-M2 (IPQ6000 / IPQ6018, 512MB RAM, 无 WiFi)
             - 包管理: opkg（可用 .ipk）
-            - 内置: OpenClash(+mihomo 内核), mosdns, 微信推送, Lucky, frpc, vlmcsd(KMS), EasyTier, Bandix
+            - 内置: OpenClash(+mihomo 内核), mosdns, 微信推送, Lucky, frpc, vlmcsd(KMS), EasyTier, Bandix, 超级网络唤醒(wolultra)
             - 刷机: 不死 U-Boot 用 `*-factory.ubi`；已有 OpenWrt 用 `*-sysupgrade.bin`
           files: output/*
           draft: false
